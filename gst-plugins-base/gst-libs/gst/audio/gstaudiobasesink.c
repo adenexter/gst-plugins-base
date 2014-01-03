@@ -79,8 +79,8 @@ enum
 };
 
 /* FIXME: 2.0, store the buffer_time and latency_time in nanoseconds */
-#define DEFAULT_BUFFER_TIME     ((200 * GST_MSECOND) / GST_USECOND)
-#define DEFAULT_LATENCY_TIME    ((10 * GST_MSECOND) / GST_USECOND)
+#define DEFAULT_BUFFER_TIME     ((600 * GST_MSECOND) / GST_USECOND)
+#define DEFAULT_LATENCY_TIME    ((200 * GST_MSECOND) / GST_USECOND)
 #define DEFAULT_PROVIDE_CLOCK   TRUE
 #define DEFAULT_SLAVE_METHOD    GST_AUDIO_BASE_SINK_SLAVE_SKEW
 
