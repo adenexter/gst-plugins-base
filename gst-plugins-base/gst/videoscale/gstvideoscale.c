@@ -129,8 +129,9 @@ enum
 
 
 static GstStaticCaps gst_video_scale_format_caps =
-    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS) ";"
-    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS));
+    GST_STATIC_CAPS (GST_VIDEO_CAPS_MAKE (GST_VIDEO_FORMATS_ALL) ";"
+    GST_VIDEO_CAPS_MAKE_WITH_FEATURES ("ANY", GST_VIDEO_FORMATS_ALL));
+
 
 #define GST_TYPE_VIDEO_SCALE_METHOD (gst_video_scale_method_get_type())
 static GType
@@ -405,7 +406,12 @@ get_formats_filter (GstVideoScaleMethod method)
   switch (method) {
     case GST_VIDEO_SCALE_NEAREST:
     case GST_VIDEO_SCALE_BILINEAR:
-      return NULL;
+    {
+      static GstStaticCaps nearest_filter =
+          GST_STATIC_CAPS ("video/x-raw(ANY),"
+          "format = (string) " GST_VIDEO_FORMATS);
+      return gst_static_caps_get (&nearest_filter);
+    }
     case GST_VIDEO_SCALE_4TAP:
     {
       static GstStaticCaps fourtap_filter =
@@ -439,7 +445,7 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
 {
   GstVideoScale *videoscale = GST_VIDEO_SCALE (trans);
   GstVideoScaleMethod method;
-  GstCaps *ret, *mfilter;
+  GstCaps *ret, *mfilter, *filtered;
   GstStructure *structure;
   GstCapsFeatures *features;
   gint i, n;
@@ -456,17 +462,19 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
   /* FIXME: Ideally we would still allow passthrough for the color formats
    * that are unsupported by the selected method */
   if ((mfilter = get_formats_filter (method))) {
-    caps = gst_caps_intersect_full (caps, mfilter, GST_CAPS_INTERSECT_FIRST);
+    filtered = gst_caps_intersect_full (caps, mfilter,
+            GST_CAPS_INTERSECT_FIRST);
     gst_caps_unref (mfilter);
   } else {
-    gst_caps_ref (caps);
+    filtered = caps;
+    gst_caps_ref (filtered);
   }
 
   ret = gst_caps_new_empty ();
-  n = gst_caps_get_size (caps);
+  n = gst_caps_get_size (filtered);
   for (i = 0; i < n; i++) {
-    structure = gst_caps_get_structure (caps, i);
-    features = gst_caps_get_features (caps, i);
+    structure = gst_caps_get_structure (filtered, i);
+    features = gst_caps_get_features (filtered, i);
 
     /* If this is already expressed by the existing caps
      * skip this structure */
@@ -494,6 +502,35 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
         gst_caps_features_copy (features));
   }
 
+  GST_DEBUG_OBJECT (trans, "allowing passthrough for unsupported caps: %"
+      GST_PTR_FORMAT, ret);
+
+  n = gst_caps_get_size (caps);
+  for (i = 0; i < n; i++) {
+    structure = gst_caps_get_structure (caps, i);
+    features = gst_caps_get_features (caps, i);
+
+    /* If this is already expressed by the existing caps
+     * skip this structure */
+    if (i > 0 && gst_caps_is_subset_structure_full (ret, structure, features))
+      continue;
+
+    /* make copy */
+    structure = gst_structure_copy (structure);
+
+    gst_structure_set (structure, "width", GST_TYPE_INT_RANGE, 1, G_MAXINT,
+        "height", GST_TYPE_INT_RANGE, 1, G_MAXINT, NULL);
+
+    /* if pixel aspect ratio, make a range of it */
+    if (gst_structure_has_field (structure, "pixel-aspect-ratio")) {
+        gst_structure_set (structure, "pixel-aspect-ratio",
+            GST_TYPE_FRACTION_RANGE, 1, G_MAXINT, G_MAXINT, 1, NULL);
+    }
+
+    gst_caps_append_structure_full (ret, structure,
+        gst_caps_features_copy (features));
+  }
+
   if (filter) {
     GstCaps *intersection;
 
@@ -503,7 +540,7 @@ gst_video_scale_transform_caps (GstBaseTransform * trans,
     ret = intersection;
   }
 
-  gst_caps_unref (caps);
+  gst_caps_unref (filtered);
   GST_DEBUG_OBJECT (trans, "returning caps: %" GST_PTR_FORMAT, ret);
 
   return ret;
